@@ -1,0 +1,103 @@
+#!/usr/bin/env bash
+#
+# Configuration file for dnp3
+# ==============================
+#
+# Usage
+# -----
+#
+# $ ./t2plconf
+#
+# Defining the configurations options
+# -----------------------------------
+#
+# If no configuration options are available, ITEMS must be set as follows:
+#   - ITEMS=(none)
+#
+# Otherwise, enter configurations items as follows:
+#   "NAME" "TYPE" "DEPENDENCIES" "DESCRIPTION"
+#
+#   - TYPE can be:
+#       - bitfield
+#       - check (boolean),
+#       - radio (set of values),
+#       - range (min <= val <= max)
+#       - text
+#
+#   - DEPENDENCIES MUST be numeric, e.g., "A == 1 && (B < 4 || C >= 1)"
+#
+#   - DESCRIPTION for type 'bitfield' MUST NOT contain '\t', ':' or ';'
+#   - DESCRIPTION for type 'check' MUST NOT contain tabs ('\t')
+#   - DESCRIPTION for type 'radio' MUST NOT contain '\t', ':' or ';'
+#   - DESCRIPTION for type 'range' MUST NOT contain '\t' or ':'
+#   - DESCRIPTION for type 'text'  MUST NOT contain '\t'
+#
+#   - DESCRIPTION MUST be formatted according to the type (see examples below):
+#       - bitfield : description ';' val1 ':' description1 ';' valN ':' descriptionN
+#       - check    : description
+#       - radio    : description ';' val1 ':' description1 ';' valN ':' descriptionN
+#       - range    : description ':' min ' ' max
+#       - text     : description
+#
+# Examples
+# --------
+#
+#ITEMS=(
+#    # An item can be specified in one line...
+#    DNP3_VAR1 check "" "Description of option" # No dependencies
+#
+#    # Or span multiple lines
+#    DNP3_VAR1 radio "DNP3_VAR1 == 1"
+#           "Description of option; \
+#                   0: description of val 0; \
+#                   1: description of val 1; \
+#                   2: description of val 2"
+#
+#    DNP3_SIZE range "DNP3_VAR1 == 1 || DNP3_VAR2 > 0"
+#           "Description: 0 255" # min=0, max=255
+#
+#    DNP3_STR text
+#           "DNP3_SIZE <= 5 && (DNP3_VAR1 != 0 || DNP3_VAR2 <= 1)"
+#           "Description"
+#
+#    DNP3_BITFIELD bitfield ""
+#           "Description of option; \
+#                   0x01: description of bit 0; \
+#                   0x02: description of bit 1; \
+#                   0x04: description of bit 2; \
+#                   0x08: description of bit 3; \
+#                   0x10: description of bit 4; \
+#                   0x20: description of bit 5; \
+#                   0x40: description of bit 6; \
+#                   0x80: description of bit 7"
+#)
+#
+# If no configuration option is available, use the value 'none'
+#ITEMS=(none)
+#
+# Source the master t2plconf file
+# source ../../scripts/t2conf/t2plconf
+
+# No configuration options available
+ITEMS=(none)
+
+#ITEMS=(
+#    DNP3_SAVE   check   ""                   "Save content to DNP3_F_PATH"
+#    DNP3_RMDIR  check   "DNP3_SAVE == 1"  "Empty DNP3_F_PATH before starting"
+#    DNP3_STATS  check   ""                   "Save statistics to baseFileName DNP3_SUFFIX"
+#    DNP3_LOAD   check   ""                   "Load DNP3_FNAME"
+#    DNP3_VAR1   check   ""                   "Output dnp3Var1 (var1)"
+#    DNP3_IP     check   ""                   "Output dnp3IP (var2)"
+#    DNP3_VEC    check   ""                   "Output dnp3Var5_Var6 and dnp3Vector"
+#
+#    DNP3_FNAME   text   "DNP3_LOAD == 1"  "File to load from the plugin folder"
+#    DNP3_SUFFIX  text   "DNP3_STATS == 1" "Suffix for output file"
+#
+#    DNP3_ENV_STR text   ""                   "String environment variable"
+#    DNP3_ENV_NUM range  ""                   "Numerical environment variable: 0 255"
+#
+#    DNP3_F_PATH  text   "DNP3_SAVE == 1"  "Path for extracted content"
+#)
+
+# Source the master t2plconf file
+source "$(dirname "$0")/../../scripts/t2conf/t2plconf"

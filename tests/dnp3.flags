@@ -1,0 +1,29 @@
+# Flags to toggle
+#
+# Run the ../../../tests/test.sh script from the plugin main directory:
+#
+# cd $T2HOME/plugins/dnp3
+# ../../tests/test.sh [OPTION...]
+#
+# If run from this folder, make sure to use absolute path for the '-p' option.
+#
+# Flag name     File
+
+# ../../tranalyzer2/src/networkHeaders.h
+ETH_ACTIVATE        ../../tranalyzer2/src/networkHeaders.h
+
+# ../../tranalyzer2/src/tranalyzer.h
+BLOCK_BUF           ../../tranalyzer2/src/tranalyzer.h
+DIFF_REPORT         ../../tranalyzer2/src/tranalyzer.h
+ENVCNTRL            ../../tranalyzer2/src/tranalyzer.h
+USE_T2BUS           ../../tranalyzer2/src/tranalyzer.h
+
+# src/dnp3.h
+DNP3_SAVE        src/dnp3.h
+DNP3_RMDIR       src/dnp3.h
+DNP3_STATS       src/dnp3.h
+DNP3_LOAD        src/dnp3.h
+DNP3_VAR1        src/dnp3.h
+DNP3_IP          src/dnp3.h # Optional comment
+DNP3_VEC         src/dnp3.h
+DNP3_ENV_NUM     src/dnp3.h

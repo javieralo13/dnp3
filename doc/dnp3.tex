@@ -1,0 +1,221 @@
+\IfFileExists{t2doc.cls}{
+    \documentclass[documentation]{subfiles}
+}{
+    \errmessage{Error: could not find 't2doc.cls'}
+}
+
+\begin{document}
+
+% Declare author and title here, so the main document can reuse it
+\trantitle
+    {dnp3} % Plugin name
+    {dnp3} % Short description
+    {Tranalyzer Development Team} % author(s)
+
+\section{dnp3}\label{s:dnp3}
+
+\subsection{Description}
+The dnp3 plugin analyzes ...
+
+\subsection{Dependencies}
+
+%\traninput{file} % use this command to input files
+%\traninclude{file} % use this command to include files
+
+%\tranimg{image} % use this command to include an image (must be located in a subfolder ./img/)
+
+\subsubsection{External Libraries}
+This plugin depends on the {\bf XXX} library.
+\begin{table}[!ht]
+    \centering
+    \begin{tabular}{>{\bf}r>{\tt}l>{\tt}l>{\tt}l}
+        \toprule
+                                     &                      & {\bf OPT1=1}    & {\bf OPT2=1}\\
+        \midrule
+        Ubuntu:                      & sudo apt-get install & libXXX-dev      & libYYY-dev\\
+        Arch:                        & sudo pacman -S       & libXXX          & YYY\\
+        Gentoo:                      & sudo emerge          & libXXX          & YYY\\
+        openSUSE:                    & sudo zypper install  & libXXX-devel    & libYYY-devel\\
+        Red Hat/Fedora\tablefootnote{If the {\tt dnf} command could not be found, try with {\tt yum} instead}:
+                                     & sudo dnf install     & libXXX-devel    & YYY-devel\\
+        macOS\tablefootnote{Brew is a packet manager for macOS that can be found here: \url{https://brew.sh}}:
+                                     & brew install         & libXXX          & YYY\\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+\subsubsection{Core Configuration}
+This plugin requires the following core configuration:
+\begin{itemize}
+    \item {\em \$T2HOME/tranalyzer2/src/networkHeaders.h}:
+        \begin{itemize}
+            \item {\tt ETH\_ACTIVATE>0}
+        \end{itemize}
+    \item {\em \$T2HOME/tranalyzer2/src/tranalyzer.h}:
+        \begin{itemize}
+            \item {\tt BLOCK\_BUF=0}
+        \end{itemize}
+\end{itemize}
+
+\subsubsection{Other Plugins}
+This plugin requires the \tranrefpl{tcpFlags} and \tranrefpl{tcpStates} plugins.
+
+\subsubsection{Required Files}
+The file {\tt filename.txt} is required.
+
+\subsection{Configuration Flags}
+The following flags can be used to control the output of the plugin:
+\begin{longtable}{>{\tt}lcl>{\tt\small}l}
+    \toprule
+    {\bf Name} & {\bf Default} & {\bf Description} & {\bf Flags}\\
+    \midrule\endhead%
+    %\\
+    %\multicolumn{3}{c}{No configuration options available}\\
+    %\\
+    DNP3\_SAVE     & 0 & Save content to {\tt DNP3\_F\_PATH}                & \\
+    DNP3\_RMDIR    & 1 & Empty {\tt DNP3\_F\_PATH} before starting          & DNP3\_SAVE=1\\ % only relevant if DNP3_SAVE=1
+    DNP3\_STATS    & 0 & Save statistics to {\tt baseFileName DNP3\_SUFFIX} & \\
+    DNP3\_LOAD     & 0 & Load {\tt DNP3\_FNAME}                             & \\
+    DNP3\_VAR1     & 0 & Output {\tt dnp3Var1}                              & \\
+    DNP3\_IP       & 0 & General description of {\tt DNP3\_IP}              & \\
+                      &   & \qquad 0: description of value 0                      & \\
+                      &   & \qquad 1: description of value 1                      & \\
+                      &   & \qquad 2: description of value 2                      & \\
+    DNP3\_VEC      & 0 & Description of {\tt DNP3\_VEC}                     & DNP3\_IP=1   \\ % only relevant if DNP3_IP=1
+    DNP3\_ENV\_NUM & 0 & Those variables can be overwritten at runtime         & \\
+    DNP3\_ENV\_STR & {\tt\small "str"}
+                          & This variable can also be overwritten at runtime      & \\
+    DNP3\_FNAME    & {\tt\small "filename.txt"}
+                          & File to load                                          & DNP3\_LOAD=1 \\ % only relevant if DNP3_LOAD=1
+    DNP3\_SUFFIX   & {\tt\small "\_suffix.txt"}
+                          & Suffix for output file                                & DNP3\_STATS=1\\ % only relevant if DNP3_STATS=1
+    DNP3\_F\_PATH  & {\tt\small "/tmp/dnp3\_files"}
+                          & Suffix for output file                                & DNP3\_STATS=1\\ % only relevant if DNP3_SAVE=1
+    \bottomrule
+\end{longtable}
+
+\subsubsection{Environment Variable Configuration Flags}
+The following configuration flags can also be configured with environment variables ({\tt ENVCNTRL>0}):
+\begin{itemize}
+    \item {\tt DNP3\_ENV\_NUM}
+    \item {\tt DNP3\_ENV\_STR}
+\end{itemize}
+
+\subsection{Flow File Output}
+The dnp3 plugin outputs the following columns:
+\begin{longtable}{>{\tt}lll>{\tt\small}l}
+    \toprule
+    {\bf Column}                        & {\bf Type} & {\bf Description}                & {\bf Flags}\\
+    \midrule\endhead%
+    \nameref{dnp3Stat}               & H8         & Status                           & \\
+    \hyperref[dnp3Stat]{dnp3Text} & S          & describe dnp3Text (string)    & \\
+    \hyperref[dnp3Var1]{dnp3Var1} & U64        & describe dnp3Var1 (uint64)    & DNP3\_VAR1=1\\  % only output if DNP3_VAR1=1
+    dnp3IP                           & IP4        & describe dnp3IP (IPv4)        & DNP3\_IP=1  \\  % only output if DNP3_IP=1
+    dnp3Var3\_Var4                   & H32\_H16   & describe {\tt dnp3Var3\_Var4} & \\
+
+    \\
+    \multicolumn{4}{l}{If {\tt DNP3\_VEC=1}, the following columns are displayed:}\\
+    \\
+
+    dnp3Var5\_Var6                   & R(U8\_U8)  & describe {\tt dnp3Var5\_Var6} & \\
+    dnp3Vector                       & R(R(D))    & describe {\tt dnp3Vector}     & \\
+    \bottomrule
+\end{longtable}
+
+\subsubsection{dnp3Stat}\label{dnp3Stat}
+The {\tt dnp3Stat} column is to be interpreted as follows:
+\begin{longtable}{>{\tt}rl}
+    \toprule
+    {\bf dnp3Stat} & {\bf Description}\\
+    \midrule\endhead%
+    0x0\textcolor{magenta}{1} & Flow is dnp3\\
+    0x0\textcolor{magenta}{2} & ---\\
+    0x0\textcolor{magenta}{4} & ---\\
+    0x0\textcolor{magenta}{8} & ---\\
+    0x\textcolor{magenta}{1}0 & ---\\
+    0x\textcolor{magenta}{2}0 & ---\\
+    0x\textcolor{magenta}{4}0 & ---\\
+    0x\textcolor{magenta}{8}0 & ---\\
+    \bottomrule
+\end{longtable}
+
+\subsubsection{dnp3Var1}\label{dnp3Var1}
+The {\tt dnp3Var1} column is to be interpreted as follows:\\
+\begin{minipage}{.48\textwidth}
+    \begin{longtable}{>{\tt}rl}
+        \toprule
+        {\bf dnp3Var1} & {\bf Description}\\
+        \midrule\endhead%
+        0x0\textcolor{magenta}{1} & ---\\
+        0x0\textcolor{magenta}{2} & ---\\
+        0x0\textcolor{magenta}{4} & ---\\
+        0x0\textcolor{magenta}{8} & ---\\
+        \bottomrule
+    \end{longtable}
+\end{minipage}
+\hfill
+\begin{minipage}{.48\textwidth}
+    \begin{longtable}{>{\tt}rl}
+        \toprule
+        {\bf dnp3Var1} & {\bf Description}\\
+        \midrule\endhead%
+        0x\textcolor{magenta}{1}0 & ---\\
+        0x\textcolor{magenta}{2}0 & ---\\
+        0x\textcolor{magenta}{4}0 & ---\\
+        0x\textcolor{magenta}{8}0 & ---\\
+        \bottomrule
+    \end{longtable}
+\end{minipage}
+
+\subsection{Packet File Output}
+In packet mode ({\tt --s} option), the dnp3 plugin outputs the following columns:
+\begin{longtable}{>{\tt}lll>{\tt\small}l}
+    \toprule
+    {\bf Column} & {\bf Type} & {\bf Description} & {\bf Flags}\\
+    \midrule\endhead%
+    dnp3Col1 & I8 & describe col1 & \\
+    \bottomrule
+\end{longtable}
+
+\subsection{Monitoring Output}
+In monitoring mode, the dnp3 plugin outputs the following columns:
+\begin{longtable}{>{\tt}lll>{\tt\small}l}
+    \toprule
+    {\bf Column} & {\bf Type} & {\bf Description} & {\bf Flags}\\
+    \midrule\endhead%
+    dnp3Col1 & I8 & describe col1 & \\
+    \bottomrule
+\end{longtable}
+
+\subsection{Plugin Report Output}
+The following information is reported:
+\begin{itemize}
+    \item Aggregated {\tt\nameref{dnp3Stat}}
+    \item Number of XXX packets
+\end{itemize}
+
+\subsection{Additional Output}
+Non-standard output:
+\begin{itemize}
+    \item {\tt PREFIX\_suffix.txt}: description
+\end{itemize}
+
+\subsection{Post-Processing}
+
+\subsection{Example Output}
+
+\subsection{Known Bugs and Limitations}
+
+\subsection{TODO}
+\begin{itemize}
+    \item TODO1
+    \item TODO2
+\end{itemize}
+
+\subsection{References}
+\begin{itemize}
+    \item \href{https://tools.ietf.org/html/rfcXXXX}{RFCXXXX}: Title
+    \item \url{https://www.iana.org/assignments/}
+\end{itemize}
+
+\end{document}
