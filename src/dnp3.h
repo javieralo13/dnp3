@@ -43,27 +43,31 @@
 /* ------------------------- DO NOT EDIT BELOW HERE ------------------------- */
 /* ========================================================================== */
 
-// Environment var vector
-// The elements in the enum below MUST be in the same order as above
-enum {
-    ENV_DNP3_FNAME,
-    ENV_DNP3_N,
-};
+// Estados para la máquina de reensamblado de cabeceras DNP3.
+typedef enum {
+    DNP3_HDR_STATE_NONE = 0,      // Estado inicial, esperando un nuevo mensaje.
+    DNP3_HDR_STATE_WANT_LINK_HDR, // Esperando el resto de una cabecera de enlace (10 bytes) fragmentada.
+    // NOTA: Se pueden añadir más estados para el reensamblado de la capa de aplicación si es necesario.
+    // hasta 254
+} DNP3_HdrState;
 // plugin defines
 // tcpWinStat status variable
 // Status
 #define DNP_STAT_DNP3      0x0001 // flow is dnp3
-#define DNP_STAT_PROTO     0x0002 // non-modbus protocol identifier
-#define DNP_STAT_FUNC      0x0004 // unknown function code
-#define DNP_STAT_EX        0x0008 // unknown exception code
-#define DNP_STAT_UID       0x0010 // multiple unit identifiers
-#define DNP_STAT_1         0x0020 //
-#define DNP_STAT_2         0x0040 //
+#define DNP_STAT_PROTO     0x0002 // VACIO, Libre
+#define DNP_STAT_FUNC      0x0004 // VACIO, Libre
+#define DNP_STAT_EX        0x0008 // VACIO, Libre
+#define DNP_STAT_UID       0x0010 // VACIO, Libre
+#define DNP_STAT_1         0x0020 // VACIO, Libre
+#define DNP_STAT_2         0x0040 // VACIO, Libre
 #define DNP_STAT_DL        0x0080 // DNP3 Valid Header 0x0564
-#define DNP_STAT_NFUNC     0x0100 // list of function codes truncated... increase MB_NUM_FUNC
-#define DNP_STAT_NFEX      0x0200 // list of function codes which caused exceptions truncated... increase MB_NUM_FEX
-#define DNP_STAT_NEXCP     0x0400 // list of exception codes truncated... increase MB_NUM_EX
-#define DNP_STAT_SNAP      0x4000 // snapped packet
+#define DNP_STAT_DL_R      0x0100 // Prueba reassembly and dnp3 valid header
+#define DNP_STAT_NFEX      0x0200 // VACIO, Libre
+#define DNP_STAT_NEXCP     0x0400 // VACIO, Libre
+#define DNP_STAT_3         0x0800 // VACIO, Libre
+#define DNP_STAT_REASSEMBLY_FAIL 0x1000 // Falla en el reensamblado (p.ej. paquete perdido)
+#define DNP_STAT_4         0x2000 // VACIO, Libre
+#define DNP_STAT_MALFORMED_R  0x4000 // snapped packet
 #define DNP_STAT_MALFORMED 0x8000 // malformed packet
 
 #define DNP3_PROTO 0x0000
@@ -165,7 +169,7 @@ typedef struct {
      * como relés de control (Grupo 12), configuración, etc., sin tener que
      * almacenar cada objeto individualmente.
      */
-    uint8_t critical_objects_seen;  // 0x00: Grupo 12 Control Relay Output Block (CROB)
+    uint16_t critical_objects_seen;  // 0x00: Grupo 12 Control Relay Output Block (CROB)
                                     // 0x01: Grupo 41 - Analog Output Block (AOB)
                                     // 0x02: Grupo 70 - File Control
                                     // 0x03: Grupo 60 - Class Assignment
@@ -218,6 +222,32 @@ typedef struct {
     
     // member to tracking dnp3 status 
     uint16_t  stat;             // status
+    
+    // --- MIEMBROS PARA EL REENSAMBLADO TCP ---
+    /**
+     * @brief Estado actual de la máquina de reensamblado para este flujo.
+     * Usa los valores del enum DNP3_HdrState.
+     */
+    uint8_t  hdr_stat;
+
+    /**
+     * @brief Contador de cuántos bytes de una cabecera fragmentada ya hemos recibido.
+     */
+    uint16_t  hdroff;
+
+    /**
+     * @brief Buffer temporal para almacenar los bytes de una cabecera DNP3 fragmentada.
+     * El tamaño 10 es para la cabecera de la capa de enlace, que es lo primero
+     * que debemos asegurar que tenemos completo.
+     */
+    uint8_t  hdr_buf[10];
+
+    /**
+     * @brief Almacena el número de secuencia TCP del próximo byte que esperamos recibir.
+     * Esencial para detectar si se han perdido segmentos TCP en medio de un mensaje.
+     */
+    uint32_t tcp_seq;
+    
 } dnp3Flow_t;
 
 

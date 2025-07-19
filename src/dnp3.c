@@ -93,32 +93,105 @@ void t2OnNewFlow(packet_t *packet UNUSED, unsigned long flowIndex) {
  * This function is called for every packet with a layer 4.
  */
 void t2OnLayer4(packet_t *packet, unsigned long flowIndex) {
+    // 1. --- CONFIGURACIÓN INICIAL Y GUARDAS ---
     dnp3Flow_t * const dnp3FlowP = &dnp3Flows[flowIndex];
 
-    if (!dnp3FlowP->stat) {
+    if (!(dnp3FlowP->stat & DNP_STAT_DNP3)) {
         // not a dnp3 packet
         DNP_DBG("Non-DNP3 Protocol Identifier in flow %" PRIu64, flows[flowIndex].findex);
         return;
     }
     
-    const uint16_t snaplen = packet->snapL7Len;
+    const uint32_t tcpSeq = ntohl(TCP_HEADER(packet)->seq);
+    const uint16_t payloadLen = packet->snapL7Len;
     const uint8_t *payload = packet->l7HdrP;
     
-    if (snaplen == 0) return; // skyp syn-ack and other packets witout payload
+    if (payloadLen == 0) return; // Si el paquete no tiene payload (p.ej. un simple TCP ACK), no hay nada que parsear.
     
     // only 1. frag packet will be processed
     if (!t2_is_first_fragment(packet)) return; //se observa SYN-ACK
-    
-    // tomar en cuenta que hay RTU cumple "tcp.len == 1"
-    if (snaplen < 2) { // init header of data link 0x0564
-        dnp3FlowP->stat |= DNP_STAT_SNAP;
+
+    // 2. --- DETECCIÓN DE SEGMENTOS TCP PERDIDOS ---
+    // Si esperamos un número de secuencia específico y llega otro, hubo una pérdida.
+    if ((dnp3FlowP->hdr_stat != DNP3_HDR_STATE_NONE) && (tcpSeq != dnp3FlowP->tcp_seq)) {
+        //DNP_DBG("ERROR: Se detectó un segmento TCP perdido. Esperado: %u, Recibido: %u", dnp3FlowP->tcp_seq, tcpSeq);
+        dnp3FlowP->stat |= DNP_STAT_REASSEMBLY_FAIL;
+        dnp3FlowP->hdr_stat = DNP3_HDR_STATE_NONE; // Reseteamos la máquina de estados.
         return;
     }
- 
-    if(payload[0]==0x05 && payload[1]==0x64){
-        dnp3FlowP->stat |= DNP_STAT_DL;            
+
+    // 3. --- MÁQUINA DE ESTADOS PARA REENSAMBLADO ---
+    switch (dnp3FlowP->hdr_stat) {
+        case DNP3_HDR_STATE_NONE: {
+            // --- Esperando el inicio de un nuevo mensaje DNP3 ---
+            if (UNLIKELY(payloadLen < sizeof(DNP3_LinkLayerHeader))) { ///analyzer conteo(tcp.len<10) vs conteo(tcp.len>=10)
+                // El inicio del mensaje está fragmentado
+                //DNP_DBG("Inicio de cabecera DNP3 fragmentada. Recibidos %u bytes.", payloadLen);
+                memcpy(dnp3FlowP->hdr_buf, payload, payloadLen);
+                dnp3FlowP->hdroff = payloadLen;
+                dnp3FlowP->hdr_stat = DNP3_HDR_STATE_WANT_LINK_HDR;
+            } else {
+                // Tenemos suficientes datos para una cabecera completa. La procesamos.
+                // Usamos el método seguro para evitar problemas de alineación.
+                // if(payload[0]==0x05 && payload[1]==0x64){
+                if (payload[0]==0x05 && payload[1]==0x64) {
+                    dnp3FlowP->stat |= DNP_STAT_DL; // Marcamos que vimos una cabecera de enlace válida.
+                    DNP_DBG("Cabecera DNP3 Link Layer completa encontrada.");
+                    
+                    // AQUÍ IRÁ LA LÓGICA PARA PARSEAR EL RESTO DEL MENSAJE
+                    // const DNP3_LinkLayerHeader *hdr = (const DNP3_LinkLayerHeader *)payload;
+                    // ... procesar hdr->len, hdr->source, etc.
+                } else {
+                    dnp3FlowP->stat |= DNP_STAT_MALFORMED;
+                }
+            }
+            break;
+        }
+
+        case DNP3_HDR_STATE_WANT_LINK_HDR: {
+            // --- Esperando el resto de una cabecera fragmentada ---
+            //DNP_DBG("Continuando reensamblado. Tenemos %u, necesitamos 10.", dnp3FlowP->hdroff);
+            
+            const uint16_t bytes_needed = (uint16_t)sizeof(DNP3_LinkLayerHeader) - dnp3FlowP->hdroff;
+            //const size_t bytes_needed = sizeof(DNP3_LinkLayerHeader) - dnp3FlowP->hdroff;
+            const uint16_t bytes_to_copy = (payloadLen < bytes_needed) ? payloadLen : bytes_needed;
+
+            // Copiamos los nuevos bytes a nuestro buffer temporal
+            memcpy(&dnp3FlowP->hdr_buf[dnp3FlowP->hdroff], payload, bytes_to_copy);
+            dnp3FlowP->hdroff += bytes_to_copy;
+
+            if (dnp3FlowP->hdroff == sizeof(DNP3_LinkLayerHeader)) { // evaluar ">=" si payloadLen > 15 si antes payloadLen<10
+                // ¡Reensamblado completo!
+                DNP_DBG("¡Reensamblado de cabecera DNP3 completo!");
+                dnp3FlowP->hdr_stat = DNP3_HDR_STATE_NONE; // Reseteamos para el próximo mensaje.
+
+                // Ahora procesamos la cabecera desde nuestro buffer.
+                // if(payload[0]==0x05 && payload[1]==0x64){
+                if (dnp3FlowP->hdr_buf[0]==0x05 && dnp3FlowP->hdr_buf[1]==0x64) {
+                    dnp3FlowP->stat |= DNP_STAT_DL_R;
+                    DNP_DBG("Cabecera DNP3 reensamblada es válida.");
+
+                    // AQUÍ IRÁ LA LÓGICA PARA PARSEAR EL RESTO DEL MENSAJE
+                    // const DNP3_LinkLayerHeader *hdr = (const DNP3_LinkLayerHeader *)dnp3FlowP->hdr_buf;
+                    // ... procesar hdr->len, etc.
+
+                    // Si sobraron bytes en este paquete, pertenecen al cuerpo del mensaje.
+                    if (bytes_to_copy < payloadLen) {
+                       // const uint8_t *message_body = payload + bytes_to_copy;
+                       // ... procesar el cuerpo ...
+                    }
+                } else {
+                    dnp3FlowP->stat |= DNP_STAT_MALFORMED_R; // TODO: cambiar estado prueba DNP_STAT_MALFORMED_R
+                }
+            }
+            // Si no, hdroff se actualizó y simplemente esperamos el siguiente paquete.
+            break;
+        }
     }
-        
+
+    // 4. --- ACTUALIZAR EL NÚMERO DE SECUENCIA TCP ESPERADO ---
+    // Siempre actualizamos el seq que esperamos para el siguiente paquete en este flujo.
+    dnp3FlowP->tcp_seq = tcpSeq + payloadLen;
 
 }
 
