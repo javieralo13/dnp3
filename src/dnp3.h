@@ -47,28 +47,28 @@
 typedef enum {
     DNP3_HDR_STATE_NONE = 0,      // Estado inicial, esperando un nuevo mensaje.
     DNP3_HDR_STATE_WANT_LINK_HDR, // Esperando el resto de una cabecera de enlace (10 bytes) fragmentada.
-    // NOTA: Se pueden añadir más estados para el reensamblado de la capa de aplicación si es necesario.
+    DNP3_STATE_WANT_BODY,           // Tenemos una cabecera válida, estamos esperando el resto del cuerpo del mensaje.
     // hasta 254
 } DNP3_HdrState;
 // plugin defines
 // tcpWinStat status variable
 // Status
-#define DNP_STAT_DNP3      0x0001 // flow is dnp3
+#define DNP_STAT_DNP3      0x0001 // 1 - flow is dnp3
 #define DNP_STAT_PROTO     0x0002 // VACIO, Libre
 #define DNP_STAT_FUNC      0x0004 // VACIO, Libre
 #define DNP_STAT_EX        0x0008 // VACIO, Libre
 #define DNP_STAT_UID       0x0010 // VACIO, Libre
 #define DNP_STAT_1         0x0020 // VACIO, Libre
 #define DNP_STAT_2         0x0040 // VACIO, Libre
-#define DNP_STAT_DL        0x0080 // DNP3 Valid Header 0x0564
-#define DNP_STAT_DL_R      0x0100 // Prueba reassembly and dnp3 valid header
+#define DNP_STAT_DL        0x0080 // 8 - DNP3 Valid Header 0x0564
+#define DNP_STAT_DL_R      0x0100 // DNP3 Valid Header 0x0564 with reassembly
 #define DNP_STAT_NFEX      0x0200 // VACIO, Libre
 #define DNP_STAT_NEXCP     0x0400 // VACIO, Libre
 #define DNP_STAT_3         0x0800 // VACIO, Libre
 #define DNP_STAT_REASSEMBLY_FAIL 0x1000 // Falla en el reensamblado (p.ej. paquete perdido)
 #define DNP_STAT_4         0x2000 // VACIO, Libre
 #define DNP_STAT_MALFORMED_R  0x4000 // snapped packet
-#define DNP_STAT_MALFORMED 0x8000 // malformed packet
+#define DNP_STAT_MALFORMED 0x8000 // 16 - malformed packet
 
 #define DNP3_PROTO 0x0000
 #define DNP3_PORT  20000    // TCP
@@ -247,7 +247,13 @@ typedef struct {
      * Esencial para detectar si se han perdido segmentos TCP en medio de un mensaje.
      */
     uint32_t tcp_seq;
-    
+
+    // Contador de cuántos bytes faltan para completar el frame DNP3 actual (incluyendo cabecera, cuerpo y todos los CRCs).
+    uint32_t frame_bytes_remaining; 
+    // banderas DEBUG / BORRAR 
+    uint32_t u32flag1; // bandera primera secuencia con dnpheader malformado | first payload<10
+    uint8_t u8flag2; // bandera guardar una vez estados malformados, no sobre escritura
+    uint8_t  dhr_buf_save[10];
 } dnp3Flow_t;
 
 
