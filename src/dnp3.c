@@ -90,10 +90,9 @@ void t2OnNewFlow(packet_t *packet UNUSED, unsigned long flowIndex) {
 }
 
 //static inline
-static inline void DL_dataUser_remaining(dnp3Flow_t *dnp3FlowP,const DNP3_LinkLayerHeader *hdr, const uint16_t payloadLen) {
+static inline void set_frame_remaining_bytes(dnp3Flow_t *dnp3FlowP,const uint8_t *header_buffer, const uint16_t pss_fir_pkt) {
     // AQUI VA LA LÓGICA PARA PARSEAR EL RESTO DEL MENSAJE
-    //const DNP3_LinkLayerHeader *hdr = (const DNP3_LinkLayerHeader *)payload;
-
+    const DNP3_LinkLayerHeader *hdr = (const DNP3_LinkLayerHeader *)header_buffer;
     // --- LOGICA DE CALCULO ---
     const uint8_t len_field = hdr->len; // max 255
     
@@ -103,23 +102,22 @@ static inline void DL_dataUser_remaining(dnp3Flow_t *dnp3FlowP,const DNP3_LinkLa
         const uint32_t num_user_data_crcs = ((uint32_t)user_data_len + 15) / 16;
         const uint32_t total_frame_size = 10 + user_data_len + (num_user_data_crcs * 2);
         
-        //DNP_DBG("Nueva cabecera DNP3. Campo LENGTH: %u. Tamaño total del frame calculado: %u", len_field, total_frame_size);
-        dnp3FlowP->frame_bytes_remaining = total_frame_size - payloadLen;
-        
-        /*// otra forma BORRAR!!
-        if (payloadLen >= total_frame_size) {
+        //DNP_DBG("Nueva cabecera DNP3. Campo LENGTH: %u. Tamaño total del frame calculado: %u", len_field, total_frame_size);      
+        if (pss_fir_pkt >= total_frame_size) {
             dnp3FlowP->frame_bytes_remaining = 0; // Frame completo en un paquete.
         } else {
-            dnp3FlowP->frame_bytes_remaining = total_frame_size - payloadLen;
+            dnp3FlowP->frame_bytes_remaining = total_frame_size - pss_fir_pkt; //bytes_processed_in_first_packet
+            dnp3FlowP->stat |= DNP_STAT_DU_SNAP;
         }
-        */
         
+        /* otra forma BORRAR!!
+        dnp3FlowP->frame_bytes_remaining = total_frame_size - payloadLen;
         if (dnp3FlowP->frame_bytes_remaining <= 0) {
             dnp3FlowP->frame_bytes_remaining = 0;                        
-        }else dnp3FlowP->stat |= DNP_STAT_MALFORMED;
-
+        }else dnp3FlowP->stat |= DNP_STAT_DU_SNAP; // Cambiar
+        */
     } else {
-            dnp3FlowP->stat |= DNP_STAT_MALFORMED;
+            dnp3FlowP->stat |= DNP_STAT_MALFORMED; // DNP_STAT_MALFORMED_L
     }  
     
 }
@@ -142,8 +140,8 @@ void t2OnLayer4(packet_t *packet, unsigned long flowIndex) {
     
     if (payloadLen == 0) return; // Si el paquete no tiene payload (p.ej. un simple TCP ACK), no hay nada que parsear.
     
-    // only 1. frag packet will be processed
-    if (!t2_is_first_fragment(packet)) return; 
+    // only 1. frag packet will be processed | eliminacion sugerida por asistente
+    //if (!t2_is_first_fragment(packet)) return; 
 
     // 2. --- DETECCIÓN DE SEGMENTOS TCP PERDIDOS ---
     // Si esperamos un número de secuencia específico y llega otro, hubo una pérdida.
@@ -181,24 +179,16 @@ void t2OnLayer4(packet_t *packet, unsigned long flowIndex) {
                 // if(payload[0]==0x05 && payload[1]==0x64){
                 if (payload[0]==0x05 && payload[1]==0x64) {
                     dnp3FlowP->stat |= DNP_STAT_DL; // Marcamos que vimos una cabecera de enlace válida.
+                    //dnp3FlowP->u32flag1++; se conto paquetes DNP_STAT_DL y se vio malformaciones en especial en 9.9.5.97
                     DNP_DBG("Cabecera DNP3 Link Layer completa encontrada.");
                     
                     // AQUI VA LA LÓGICA PARA PARSEAR EL RESTO DEL MENSAJE
                     //const DNP3_LinkLayerHeader *hdr = (const DNP3_LinkLayerHeader *)payload;
                         
                     // --- LOGICA DE CALCULO ---
-                    const DNP3_LinkLayerHeader *hdr = (const DNP3_LinkLayerHeader *)payload;
-                    DL_dataUser_remaining(dnp3FlowP, hdr, payloadLen);
-                 /*   const uint8_t len_field = hdr->len;
-                    const uint8_t user_data_len = len_field - 5;
-                    uint32_t total_frame_size = 10 + user_data_len + (((uint32_t)user_data_len + 15) / 16) * 2;
-                        
-                    //DNP_DBG("Nueva cabecera DNP3. Campo LENGTH: %u. Tamaño total del frame calculado: %u", len_field, total_frame_size);
-                    dnp3FlowP->frame_bytes_remaining = total_frame_size - payloadLen;
-                    if (dnp3FlowP->frame_bytes_remaining <= 0) {
-                           dnp3FlowP->frame_bytes_remaining = 0;                        
-                    } else dnp3FlowP->stat |= DNP_STAT_MALFORMED;
-                    */
+                    //const DNP3_LinkLayerHeader *hdr = (const DNP3_LinkLayerHeader *)payload;
+                    set_frame_remaining_bytes(dnp3FlowP, payload, payloadLen);
+
                 } else {
                     dnp3FlowP->stat |= DNP_STAT_MALFORMED;
                 }
@@ -222,23 +212,28 @@ void t2OnLayer4(packet_t *packet, unsigned long flowIndex) {
                 dnp3FlowP->hdr_stat = DNP3_HDR_STATE_NONE; // Reseteamos para el próximo mensaje.
 
                 // Ahora procesamos la cabecera desde nuestro buffer.
-                // if(payload[0]==0x05 && payload[1]==0x64){
                 if (dnp3FlowP->hdr_buf[0]==0x05 && dnp3FlowP->hdr_buf[1]==0x64) {
-                    dnp3FlowP->stat |= DNP_STAT_DL_R;
+                    dnp3FlowP->stat |= DNP_STAT_DL;
+                    // dnp3FlowP->u32flag1++; se conto paquetes DNP_STAT_DL y se vio malformaciones en especial en 9.9.5.97
                     DNP_DBG("Cabecera DNP3 reensamblada es válida.");
 
                     // AQUÍ IRÁ LA LÓGICA PARA PARSEAR EL RESTO DEL MENSAJE
-                    const DNP3_LinkLayerHeader *hdr = (const DNP3_LinkLayerHeader *)dnp3FlowP->hdr_buf;
-                    DL_dataUser_remaining(dnp3FlowP, hdr,payloadLen);
+                    //const DNP3_LinkLayerHeader *hdr = (const DNP3_LinkLayerHeader *)dnp3FlowP->hdr_buf; DIRECTO
+                    // El total de bytes procesados hasta ahora es el tamaño de la cabecera reensamblada
+                    // más los datos que sobraron en este paquete.
+                    uint32_t total_bytes_processed = sizeof(DNP3_LinkLayerHeader) + (payloadLen - bytes_to_copy);
+                    set_frame_remaining_bytes(dnp3FlowP, dnp3FlowP->hdr_buf, total_bytes_processed);
                     
                 } else {
-                    dnp3FlowP->stat |= DNP_STAT_MALFORMED_R; // TODO: cambiar estado prueba DNP_STAT_MALFORMED_R
-                    // dnp3FlowP->u32flag1++; conteo de paquetes malformados
+                    dnp3FlowP->stat |= DNP_STAT_MALFORMED; // DNP_STAT_MALFORMED_R
+                    //dnp3FlowP->u32flag1++; conteo de paquetes malformados
+                    
                     if (!dnp3FlowP->u8flag2) { // Si no se ha guardado una antes
                         memcpy(dnp3FlowP->dhr_buf_save, dnp3FlowP->hdr_buf, sizeof(dnp3FlowP->hdr_buf));
                         dnp3FlowP->u8flag2 = 1; // Marca que ya se guardó
                         dnp3FlowP->u32flag1= tcpSeq;
                     }
+                    
                 }
             }
             // Si no, hdroff se actualizó y simplemente esperamos el siguiente paquete.
