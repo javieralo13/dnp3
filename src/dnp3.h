@@ -57,10 +57,10 @@ typedef enum {
 #define DNP_STAT_000             0x0002 // VACIO, Libre
 #define DNP_STAT_001             0x0004 // VACIO, Libre
 #define DNP_STAT_002             0x0008 // VACIO, Libre
-#define DNP_STAT_DU_SNAP         0x0010 // data link snap data user
+#define DNP_STAT_003             0x0010 // VACIO, Libre SNAP possible
 #define DNP_STAT_1               0x0020 // VACIO, Libre
 #define DNP_STAT_2               0x0040 // VACIO, Libre
-#define DNP_STAT_DL              0x0080 // 8 - DNP3 Valid Header 0x0564
+#define DNP_STAT_DL              0x0080 // 8 - DNP3 Valid Header 0x0564 & frame len >=10
 #define DNP_STAT_6               0x0100 // VACIO, Libre
 #define DNP_STAT_7               0x0200 // VACIO, Libre
 #define DNP_STAT_MALFORMED_L     0x0400 // malformed packet  LEN datalink
@@ -157,7 +157,7 @@ typedef struct {
     uint32_t len;       // Bytes actualmente usados en el buffer.
     uint32_t lastlen;       // podrias usarse para comparar el paquete duplicado con mas bytes.
     uint32_t allocated; // Total de bytes asignados en memoria.
-} dnp3_stream_buffer_t;
+} dnp_strm_bf_t; //dnp3 stream buffer type
 
 /**
  * @brief Almacena metadatos de seguridad y estado para un único flujo DNP3.
@@ -257,21 +257,22 @@ typedef struct {
      * @brief Almacena el número de secuencia TCP del próximo byte que esperamos recibir.
      * Esencial para detectar si se han perdido segmentos TCP en medio de un mensaje.
      */
-    uint32_t tcp_seq;
+    uint32_t expected_seq;
 
 /**
  * @brief Estructura principal del flujo DNP3, con buffers dinámicos para cada dirección.
  */
-    dnp3_stream_buffer_t client_stream; // Buffer para datos del cliente -> servidor.
-    dnp3_stream_buffer_t server_stream; // Buffer para datos del servidor -> cliente.
-
+    dnp_strm_bf_t stream_dnp3; 
+    /*
+    dnp_strm_bf_t client_stream; // Buffer para datos del cliente -> servidor.
+    dnp_strm_bf_t server_stream; // Buffer para datos del servidor -> cliente.
 
     uint32_t tcp_seq_client; // Próximo SEQ esperado del cliente.
     uint32_t tcp_seq_server; // Próximo SEQ esperado del servidor.
-    
+    */
     // banderas DEBUG - BORRAR 
     // Contador de cuántos bytes faltan para completar el frame DNP3 actual (incluyendo cabecera, cuerpo y todos los CRCs).
-    uint32_t frame_bytes_remaining; 
+    //uint32_t frame_bytes_remaining; 
     uint32_t u32flag1; // conteo paquetes malformados en TCP / dnp3Flowp->seq!=packet->seq
     uint8_t u8flag2; // conteo paquetes malformados tcp
     uint32_t u32flag3; // conteo paquetes malformados en dnp3 Data link
