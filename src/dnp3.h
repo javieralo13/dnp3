@@ -54,15 +54,15 @@ typedef enum {
 // tcpWinStat status variable
 // Status
 #define DNP_STAT_DNP3            0x0001 // 1 - flow is dnp3
-#define DNP_STAT_PROTO           0x0002 // VACIO, Libre
-#define DNP_STAT_FUNC            0x0004 // VACIO, Libre
-#define DNP_STAT_EX              0x0008 // VACIO, Libre
+#define DNP_STAT_000             0x0002 // VACIO, Libre
+#define DNP_STAT_001             0x0004 // VACIO, Libre
+#define DNP_STAT_002             0x0008 // VACIO, Libre
 #define DNP_STAT_DU_SNAP         0x0010 // data link snap data user
 #define DNP_STAT_1               0x0020 // VACIO, Libre
 #define DNP_STAT_2               0x0040 // VACIO, Libre
 #define DNP_STAT_DL              0x0080 // 8 - DNP3 Valid Header 0x0564
 #define DNP_STAT_6               0x0100 // VACIO, Libre
-#define DNP_STAT_NFEX            0x0200 // VACIO, Libre
+#define DNP_STAT_7               0x0200 // VACIO, Libre
 #define DNP_STAT_MALFORMED_L     0x0400 // malformed packet  LEN datalink
 #define DNP_STAT_MALFORMED_R     0x0800 // malformed packet in SNAP Data Link packet
 #define DNP_STAT_REASSEMBLY_FAIL 0x1000 // Falla en el reensamblado (p.ej. paquete perdido)
@@ -70,8 +70,10 @@ typedef enum {
 #define DNP_STAT_5               0x4000 // VACIO, Libre
 #define DNP_STAT_MALFORMED       0x8000 // 16 - malformed packet
 
-#define DNP3_PORT  20000    // TCP
-// plugin defines - DNP3 protocol
+#define DNP3_PORT  20000    // Common port of DNP3
+
+//plugin defines - DNP3 protocol
+#define DNP3_STREAM_BUFFER_SIZE 2048 // 2KB por dirección, ajustable
 // #define DNP3_START 0x0564     // frame init bytes,data Link Layer, use uint16_t in variables;
 // #define dataLink_len 0x0A     // length bytes example if( len(*streamBytes) = dataLink_len )
 // #define appHeader_len 0x04     // length bytes example if( len(*streamBytes) = appHeader_len )
@@ -97,7 +99,7 @@ typedef struct {
     uint16_t destination; // Dirección de destino
     uint16_t source;      // Dirección de origen
     uint16_t crc;         // CRC de la cabecera
-} DNP3_LinkLayerHeader;
+} dnp3_LinkLayerHeader;
 
 /**
  * @brief Byte de control de la Capa de Transporte DNP3 (1 byte). Fijo.
@@ -140,12 +142,22 @@ typedef struct {
  * pasar la información ya decodificada a la lógica de detección de anomalías.
  */
 typedef struct {
-    const DNP3_LinkLayerHeader* link_header;    // Puntero al inicio del paquete
+    const dnp3_LinkLayerHeader* link_header;    // Puntero al inicio del paquete
     DNP3_AppHeader              app_header;     // Copia de la cabecera de aplicación
     const uint8_t* objects_payload;             // Puntero al inicio de los objetos
     int                         objects_len;    // Longitud del payload de objetos
     // Aquí puedes añadir más metadatos, como el timestamp del paquete, etc.
 } ParsedDNP3Message;
+
+/**
+ * @brief Estructura para un buffer dinámico que almacena el stream TCP reensamblado.
+ */
+typedef struct {
+    uint8_t *buffer;    // Puntero a la memoria asignada dinámicamente.
+    uint32_t len;       // Bytes actualmente usados en el buffer.
+    uint32_t lastlen;       // podrias usarse para comparar el paquete duplicado con mas bytes.
+    uint32_t allocated; // Total de bytes asignados en memoria.
+} dnp3_stream_buffer_t;
 
 /**
  * @brief Almacena metadatos de seguridad y estado para un único flujo DNP3.
@@ -246,12 +258,24 @@ typedef struct {
      * Esencial para detectar si se han perdido segmentos TCP en medio de un mensaje.
      */
     uint32_t tcp_seq;
+
+/**
+ * @brief Estructura principal del flujo DNP3, con buffers dinámicos para cada dirección.
+ */
+    dnp3_stream_buffer_t client_stream; // Buffer para datos del cliente -> servidor.
+    dnp3_stream_buffer_t server_stream; // Buffer para datos del servidor -> cliente.
+
+
+    uint32_t tcp_seq_client; // Próximo SEQ esperado del cliente.
+    uint32_t tcp_seq_server; // Próximo SEQ esperado del servidor.
     
     // banderas DEBUG - BORRAR 
     // Contador de cuántos bytes faltan para completar el frame DNP3 actual (incluyendo cabecera, cuerpo y todos los CRCs).
     uint32_t frame_bytes_remaining; 
-    uint32_t u32flag1; // secuencia encontrada con DNP_STAT_MALFORMED_R
-    uint8_t u8flag2; // bandera guardar una vez estados malformados, no sobre escritura
+    uint32_t u32flag1; // conteo paquetes malformados en TCP / dnp3Flowp->seq!=packet->seq
+    uint8_t u8flag2; // conteo paquetes malformados tcp
+    uint32_t u32flag3; // conteo paquetes malformados en dnp3 Data link
+    
     uint8_t  dhr_buf_save[10];
 } dnp3Flow_t;
 
