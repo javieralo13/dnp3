@@ -26,7 +26,7 @@
 // Local includes
 
 #include "t2Plugin.h"
-
+#include "dnp3_utils.h"
 
 /* ========================================================================== */
 /* ------------------------ USER CONFIGURATION FLAGS ------------------------ */
@@ -43,16 +43,8 @@
 /* ------------------------- DO NOT EDIT BELOW HERE ------------------------- */
 /* ========================================================================== */
 
-// Estados para la máquina de reensamblado de cabeceras DNP3.
-typedef enum {
-    DNP3_HDR_STATE_NONE = 0,      // Estado inicial, esperando un nuevo mensaje.
-    DNP3_HDR_STATE_WANT_LINK_HDR, // Esperando el resto de una cabecera de enlace (10 bytes) fragmentada.
-    DNP3_STATE_WANT_BODY,           // Tenemos una cabecera válida, estamos esperando el resto del cuerpo del mensaje.
-    // hasta 254
-} DNP3_HdrState;
-// plugin defines
-// tcpWinStat status variable
-// Status
+
+// Status dnp3 Flow
 #define DNP_STAT_DNP3            0x0001 // 1 - flow is dnp3
 #define DNP_STAT_000             0x0002 // VACIO, Libre
 #define DNP_STAT_001             0x0004 // VACIO, Libre
@@ -70,14 +62,14 @@ typedef enum {
 #define DNP_STAT_5               0x4000 // VACIO, Libre
 #define DNP_STAT_MALFORMED       0x8000 // 16 - malformed packet
 
-#define DNP3_PORT  20000    // Common port of DNP3
-
 //plugin defines - DNP3 protocol
-#define DNP3_STREAM_BUFFER_SIZE 2048 // 2KB por dirección, ajustable
+#define DNP3_PORT  20000    // Common port of DNP3
 // #define DNP3_START 0x0564     // frame init bytes,data Link Layer, use uint16_t in variables;
 // #define dataLink_len 0x0A     // length bytes example if( len(*streamBytes) = dataLink_len )
 // #define appHeader_len 0x04     // length bytes example if( len(*streamBytes) = appHeader_len )
 // ...
+
+
 #if DNP_DEBUG == 1
 #define DNP_DBG(format, args...) T2_PINF(plugin_name, format, ##args)
 #else // DNP_DEBUG == 0
@@ -85,7 +77,7 @@ typedef enum {
 #endif // DNP_DEBUG == 0
 
 
-// Plugin structure
+// Plugin_structure
 // --- Empaquetado de 1 byte para todas las estructuras de protocolo ---
 #pragma pack(push, 1)
 
@@ -130,7 +122,7 @@ typedef struct {
 } DNP3_ObjectHeader;
 
 
-#pragma pack(pop)
+#pragma pack(pop) //Plugin_structure
 
 
 // --- Estructura de "gestión" para uso interno en tu disector ---
@@ -153,11 +145,13 @@ typedef struct {
  * @brief Estructura para un buffer dinámico que almacena el stream TCP reensamblado.
  */
 typedef struct {
-    uint8_t *buffer;    // Puntero a la memoria asignada dinámicamente.
-    uint32_t len;       // Bytes actualmente usados en el buffer.
-    uint32_t lastlen;       // podrias usarse para comparar el paquete duplicado con mas bytes.
-    uint32_t allocated; // Total de bytes asignados en memoria.
-} dnp_strm_bf_t; //dnp3 stream buffer type
+    u32queue_t last_expec_sequences;       // TCP sequence number connection tracking | FIFO last_expec_sequences
+    uint32_t len;                // Bytes actualmente usados en el buffer.    
+    uint32_t expected_seq;       // Almacena el número de secuencia TCP del próximo byte que esperamos recibir.
+    //uint32_t expected_ack;       // para seralizar un rastreo de ACK
+    uint32_t allocated;          // Total de bytes asignados en memoria.
+    uint8_t *buffer;             // Puntero a la memoria asignada dinámicamente.
+} dnp_stream_t; //dnp3 stream buffer type
 
 /**
  * @brief Almacena metadatos de seguridad y estado para un único flujo DNP3.
@@ -239,33 +233,33 @@ typedef struct {
      * @brief Estado actual de la máquina de reensamblado para este flujo.
      * Usa los valores del enum DNP3_HdrState.
      */
-    uint8_t  hdr_stat;
+    //uint8_t  hdr_stat;
 
     /**
      * @brief Contador de cuántos bytes de una cabecera fragmentada ya hemos recibido.
      */
-    uint16_t  hdroff;
+    //uint16_t  hdroff;
 
     /**
      * @brief Buffer temporal para almacenar los bytes de una cabecera DNP3 fragmentada.
      * El tamaño 10 es para la cabecera de la capa de enlace, que es lo primero
      * que debemos asegurar que tenemos completo.
      */
-    uint8_t  hdr_buf[10];
+    //uint8_t  hdr_buf[10];
 
     /**
      * @brief Almacena el número de secuencia TCP del próximo byte que esperamos recibir.
      * Esencial para detectar si se han perdido segmentos TCP en medio de un mensaje.
      */
-    uint32_t expected_seq;
+    //uint32_t expected_seq; <-- migrado a stream_dnp3
 
 /**
  * @brief Estructura principal del flujo DNP3, con buffers dinámicos para cada dirección.
  */
-    dnp_strm_bf_t stream_dnp3; 
+    dnp_stream_t stream_dnp3; 
     /*
-    dnp_strm_bf_t client_stream; // Buffer para datos del cliente -> servidor.
-    dnp_strm_bf_t server_stream; // Buffer para datos del servidor -> cliente.
+    dnp_stream_t client_stream; // Buffer para datos del cliente -> servidor.
+    dnp_stream_t server_stream; // Buffer para datos del servidor -> cliente.
 
     uint32_t tcp_seq_client; // Próximo SEQ esperado del cliente.
     uint32_t tcp_seq_server; // Próximo SEQ esperado del servidor.
@@ -273,9 +267,10 @@ typedef struct {
     // banderas DEBUG - BORRAR 
     // Contador de cuántos bytes faltan para completar el frame DNP3 actual (incluyendo cabecera, cuerpo y todos los CRCs).
     //uint32_t frame_bytes_remaining; 
-    uint32_t u32flag1; // conteo paquetes malformados en TCP / dnp3Flowp->seq!=packet->seq
+    uint32_t u32flag1; // conteo secuencias duplicadas
     uint8_t u8flag2; // conteo paquetes malformados tcp
-    uint32_t u32flag3; // conteo paquetes malformados en dnp3 Data link
+    uint32_t u32flag3; // conteo secuencias saltadas 
+    uint32_t u32flag4; // conteo secuencias esperada igual 
     
     uint8_t  dhr_buf_save[10];
 } dnp3Flow_t;

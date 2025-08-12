@@ -17,7 +17,6 @@
  */
 
 #include "dnp3.h"
-
 //#include "t2buf.h"
 
 
@@ -68,8 +67,9 @@ binary_value_t* t2PrintHeader() {
     binary_value_t *bv = NULL;
     BV_APPEND_H16(bv, "dnp3Stat" , "DNP3 status");
     BV_APPEND_H32(bv , "u32flag1"  , "u32flag1"); 
-    //BV_APPEND_H32(bv , "u32flag3"  , "u32flag3"); 
-    //BV_APPEND_H8_R( bv, "dhr_buf_save"     , "data link header ");
+    BV_APPEND_H32(bv , "u32flag3"  , "u32flag3"); 
+    BV_APPEND_H32(bv , "u32flag4"  , "u32flag4"); 
+    BV_APPEND_H32_R(bv, "lst_expc_seq"     , "dnp3 last tcp seq tracking");
     return bv;
 }
 
@@ -95,7 +95,8 @@ void t2OnNewFlow(packet_t *packet UNUSED, unsigned long flowIndex) {
 /* -------------------------- FUNCIONES DE AYUDA ---------------------------- */
 /* ========================================================================== */
 
-static bool dnp3_stream_append(dnp_strm_bf_t *streamBuffP, const uint8_t *payload, const uint16_t payload_len) {
+static bool dnp3_stream_append(dnp_stream_t *streamBuffP, const uint8_t *payload, const uint16_t payload_len) {
+    // new allocate size of buffer, default 292 max dnp3 fragment in datalink layer
     if (streamBuffP->allocated == 0) {
         const size_t initial_size = 292;
         streamBuffP->buffer = t2_malloc(initial_size);
@@ -106,9 +107,8 @@ static bool dnp3_stream_append(dnp_strm_bf_t *streamBuffP, const uint8_t *payloa
     }
 
     const size_t new_len = streamBuffP->len + payload_len;
-    if (new_len > streamBuffP->allocated && streamBuffP->allocated>1 ) { //safety_lock
-        // safety_lock para que new_alloc_size aumente si o si no se quede trabado en while
-        // TODO: UNLIKELY (0.26% tcp.len>292)(other 47.8% is less than 292 bytes)
+    if (new_len > streamBuffP->allocated && streamBuffP->allocated>1 ) { //safety_lock allocated>1
+        // (0.26% tcp.len>292 other 47.8% is less than 292 bytes)
         size_t new_alloc_size = streamBuffP->allocated;
         while (new_len > new_alloc_size) { new_alloc_size *= 2; } //ejemplo new_len=584(292*2)
 
@@ -130,10 +130,9 @@ static bool dnp3_stream_append(dnp_strm_bf_t *streamBuffP, const uint8_t *payloa
 }
 
 
-static void parse_dnp3_stream(dnp_strm_bf_t *stream, dnp3Flow_t *flow_state) {
+static void parse_dnp3_stream(dnp_stream_t *stream, dnp3Flow_t *flow_state) {
     int safety_lock = 0;
-    const int max_loops = 100; // Un número alto de frames DNP3 concatenados en un solo buffer es improbable.
-                                // 1500 por MTU y 292 max frame dnp3  1500/292 aprox 5.13
+    const int max_loops = 100; // 1500 por MTU y 292 max frame dnp3  1500/292 aprox 5.13
     
     while (safety_lock++ < max_loops) { 
         if (stream->len < sizeof(dnp3_LinkLayerHeader)) {
@@ -143,7 +142,7 @@ static void parse_dnp3_stream(dnp_strm_bf_t *stream, dnp3Flow_t *flow_state) {
         // Usamos el buffer reensamblado como fuente de datos
         const uint8_t *frame_buff = stream->buffer;
 
-        // Comprobación de cabecera (byte por byte, como acordamos)
+        // Comprobación de cabecera 
         if (frame_buff[0] != 0x05 || frame_buff[1] != 0x64) {
             flow_state->stat |= DNP_STAT_MALFORMED;
             DNP_DBG("Error de sincronización DNP3, vaciando buffer.");
@@ -174,6 +173,7 @@ static void parse_dnp3_stream(dnp_strm_bf_t *stream, dnp3Flow_t *flow_state) {
 
         // --- ¡ÉXITO! TENEMOS UN FRAME DNP3 COMPLETO EN EL BUFFER ---
         flow_state->stat |= DNP_STAT_DL;
+        //dnp3FlowP->u32flag3++ TODO: no esta el parametro  y puntero dnp3FlowP
         DNP_DBG("¡Frame DNP3 completo de %u bytes parseado desde el stream!", total_frame_size);
         
         // AQUÍ: Se haría el análisis profundo de los datos de usuario (capa de transporte/aplicación)
@@ -199,9 +199,9 @@ static void parse_dnp3_stream(dnp_strm_bf_t *stream, dnp3Flow_t *flow_state) {
  * This function is called for every packet with a layer 4.
  */
 void t2OnLayer4(packet_t *packet, unsigned long flowIndex) {
-    // 1. --- CONFIGURACIÓN INICIAL Y GUARDAS ---
+    // 1. --- CONFIGURACION INICIAL Y GUARDAS ---
     dnp3Flow_t * const dnp3FlowP = &dnp3Flows[flowIndex];
-    dnp_strm_bf_t * const streamBuffP = &dnp3FlowP->stream_dnp3;
+    dnp_stream_t * const streamBuffP = &dnp3FlowP->stream_dnp3;
     
     if (!(dnp3FlowP->stat & DNP_STAT_DNP3)) {
         // not a dnp3 packet
@@ -217,32 +217,41 @@ void t2OnLayer4(packet_t *packet, unsigned long flowIndex) {
     
     //if (!t2_is_first_fragment(packet)) return; 
 
-    // 2. --- DETECCIÓN DE SEGMENTOS TCP PERDIDOS ---
-    if (dnp3FlowP->expected_seq != 0) { // Solo comprobamos si ya hemos visto un paquete antes
-        if (tcpSeq < dnp3FlowP->expected_seq) {
-            // CASO 1: PAQUETE DUPLICADO/RETRANSMITIDO
-            DNP_DBG("Paquete TCP duplicado detectado. Ignorando.");
-            //dnp3FlowP->stat |= DNP_STAT_DUPLICATE_TCP;
-            /*
-             * TODO: Ignoramos pero esta el caso que que la master envie nuevamente el mismo   
-             * paquete duplicado pero con otro frame como en tcp.seq_raw == 0x092b1213
-             */
-            return; // Ignoramos el paquete, no actualizamos nada.
-        }
-        if (tcpSeq > dnp3FlowP->expected_seq) {
-            // CASO 2: PAQUETE PERDIDO (SECUENCIA SALTÓ)
-            DNP_DBG("ERROR: Paquete perdido. Esperado: %u, Recibido: %u", dnp3FlowP->expected_seq, tcpSeq);
-            dnp3FlowP->stat |= DNP_STAT_REASSEMBLY_FAIL;
-            // Podríamos resetear el buffer aquí si quisiéramos ser más estrictos
-            // streamBuffP->len = 0;
-            // No retornamos aún, procesamos este paquete como el inicio de un nuevo intento.
-            dnp3FlowP->u32flag1++; // nos sirve para indagar que IPs con mas problables a DNP_STAT_REASSEMBLY_FAIL            
-            /*
-             * if (!dnp3FlowP->u8flag2) { // Si no se ha guardado una antes
-                dnp3FlowP->u8flag2 = 1; // Marca que ya se guardó
-                dnp3FlowP->u32flag1= tcpSeq;
+    // 2. --- DETECCION DE SEGMENTOS TCP PERDIDOS ---
+    if (streamBuffP->expected_seq != 0) { // Solo comprobamos si ya hemos visto un paquete antes
+        /*
+         * TODO: Calcular heuristica para tracking tcp stream | como en tcp.seq_raw == 0x092b1213 |opposite ack
+         */
+        if (UNLIKELY(tcpSeq > streamBuffP->expected_seq)) {
+            // CASO 2: PAQUETE PERDIDO (SECUENCIA SALTÓ) o IP opuesto respondio a otro paquete            
+            u32queue_t * const lst_expcseqP = &streamBuffP->last_expec_sequences;
+            //uint8_t index_find = 0;
+            //if(!contains_queue_u32(lst_expcseqP, tcpSeq, &index_find)){ 
+            if (!contains_queue_u32(lst_expcseqP, tcpSeq, NULL)) {
+                DNP_DBG("ERROR: Paquete perdido. Esperado: %u, Recibido: %u", streamBuffP->expected_seq, tcpSeq);
+                dnp3FlowP->stat |= DNP_STAT_REASSEMBLY_FAIL;
+                // Podríamos resetear el buffer aquí si quisiéramos ser más estrictos
+                // streamBuffP->buffer = NULL; // verificar si es necesario <-- opcion 2
+                // streamBuffP->allocated = 0; // verificar si es necesario <-- opcion 2
+                // streamBuffP->len = 0; <-- opcion 1
+                // return; // verificar si es necesario  <-- opcion 3
+                
             }
-            */            
+            // BORRAR: u32flag4>u32flag1>u32flag3
+            // No retornamos aún, procesamos este paquete como el inicio de un nuevo intento.
+            dnp3FlowP->u32flag3++; // conteo salto de secuencia
+        }else if (UNLIKELY(tcpSeq < streamBuffP->expected_seq)) {
+            // CASO 1: PAQUETE DUPLICADO/RETRANSMITIDO
+            u32queue_t * const lst_expcseqP = &streamBuffP->last_expec_sequences;
+            DNP_DBG("Paquete TCP duplicado/retransmitido detectado. registrado.");
+            
+            // rastreamos las secuencias duplicadas luego ignoramos el paquete
+            add_queue_u32(lst_expcseqP, tcpSeq + payloadLen);
+            dnp3FlowP->u32flag1++;
+            return; // Ignoramos el paquete, solo actualizamos ultimas secuencias esperadas.
+        }else { // tcpSeq == streamBuffP->expected_seq
+            // CASO 3: SECUENCIA ACTUAL IGUAL A LA ESPERADA
+            dnp3FlowP->u32flag4++;
         }
     }
  
@@ -256,21 +265,23 @@ void t2OnLayer4(packet_t *packet, unsigned long flowIndex) {
     parse_dnp3_stream(streamBuffP, dnp3FlowP);
 
     // 5. Actualizar la secuencia esperada
-    dnp3FlowP->expected_seq = tcpSeq + payloadLen;
+    streamBuffP->expected_seq = tcpSeq + payloadLen;
 
 }
 
 /*
  * This function is called once a flow is terminated.
- * Output all the statistics for the flow here.
  */
 void t2OnFlowTerminate(unsigned long flowIndex, outputBuffer_t *buf) {
     const dnp3Flow_t * const dnp3FlowP = &dnp3Flows[flowIndex];
-
+    const dnp_stream_t * const streamBuffP = &dnp3FlowP->stream_dnp3;
+    
     OUTBUF_APPEND_U16(buf, dnp3FlowP->stat); // dnp3Stat
-    OUTBUF_APPEND_U32(buf , dnp3FlowP->u32flag1);  // 
-    //OUTBUF_APPEND_U32(buf , dnp3FlowP->u32flag3);   //  
+    OUTBUF_APPEND_U32(buf , dnp3FlowP->u32flag1);  // u32flag1
+    OUTBUF_APPEND_U32(buf , dnp3FlowP->u32flag3);   // u32flag3
+    OUTBUF_APPEND_U32(buf , dnp3FlowP->u32flag4);   // u32flag4
     //OUTBUF_APPEND_ARRAY_U8(buf , dnp3FlowP->dhr_buf_save, 10); // 
+    OUTBUF_APPEND_ARRAY_U32(buf , streamBuffP->last_expec_sequences.data, BUFFER_QUEUE_SIZE); // st_expc_seq
     
     // --- LIBERACIÓN DE MEMORIA CRUCIAL ---
     t2_free(dnp3FlowP->stream_dnp3.buffer);

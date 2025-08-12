@@ -56,6 +56,7 @@ inc = include_directories(
 
 src = [
     join_paths('src', plugin_name + '.c'),
+    join_paths('src', 'dnp3_utils.c'),
     #join_paths('..', '..', 'utils', 't2buf.c'),
 ]
 

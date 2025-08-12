@@ -1,7 +1,8 @@
 lib_LTLIBRARIES = libdnp3.la
 
 libdnp3_la_SOURCES = \
-	@PACKAGE_NAME@.c
+	@PACKAGE_NAME@.c \
+	dnp3_utils.c 
 #	../../../utils/t2buf.c  # if you uncomment this line, do not
 #	                        # forget to append a backslash above!
 
