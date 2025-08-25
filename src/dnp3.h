@@ -77,7 +77,7 @@
 #endif // DNP_DEBUG == 0
 
 
-// Plugin_structure
+// dnp3_protocol_struct
 // --- Empaquetado de 1 byte para todas las estructuras de protocolo ---
 #pragma pack(push, 1)
 
@@ -122,7 +122,7 @@ typedef struct {
 } DNP3_ObjectHeader;
 
 
-#pragma pack(pop) //Plugin_structure
+#pragma pack(pop) //dnp3_protocol_struct
 
 
 // --- Estructura de "gestión" para uso interno en tu disector ---
@@ -135,6 +135,7 @@ typedef struct {
  */
 typedef struct {
     const dnp3_LinkLayerHeader* link_header;    // Puntero al inicio del paquete
+    uint8_t                     dnp3_transport; // copia de cabecera de transporte
     DNP3_AppHeader              app_header;     // Copia de la cabecera de aplicación
     const uint8_t* objects_payload;             // Puntero al inicio de los objetos
     int                         objects_len;    // Longitud del payload de objetos
@@ -146,10 +147,10 @@ typedef struct {
  */
 typedef struct {
     u32queue_t last_expec_sequences;       // TCP sequence number connection tracking | FIFO last_expec_sequences
-    uint32_t len;                // Bytes actualmente usados en el buffer.    
+    uint16_t len;                // Bytes actualmente usados en el buffer.    
     uint32_t expected_seq;       // Almacena el número de secuencia TCP del próximo byte que esperamos recibir.
     //uint32_t expected_ack;       // para seralizar un rastreo de ACK
-    uint32_t allocated;          // Total de bytes asignados en memoria.
+    size_t allocated;          // Total de bytes asignados en memoria.
     uint8_t *buffer;             // Puntero a la memoria asignada dinámicamente.
 } dnp_stream_t; //dnp3 stream buffer type
 
@@ -174,7 +175,7 @@ typedef struct {
      * como relés de control (Grupo 12), configuración, etc., sin tener que
      * almacenar cada objeto individualmente.
      */
-    uint16_t critical_objects_seen;  // 0x00: Grupo 12 Control Relay Output Block (CROB)
+    uint16_t critical_objects_seen; // 0x00: Grupo 12 Control Relay Output Block (CROB)
                                     // 0x01: Grupo 41 - Analog Output Block (AOB)
                                     // 0x02: Grupo 70 - File Control
                                     // 0x03: Grupo 60 - Class Assignment
@@ -228,34 +229,15 @@ typedef struct {
     // member to tracking dnp3 status 
     uint16_t  stat;             // status
     
-    // --- MIEMBROS PARA EL REENSAMBLADO TCP ---
+    // --- MIEMBROS PARA EL REENSAMBLADO DNP3 ---
     /**
-     * @brief Estado actual de la máquina de reensamblado para este flujo.
-     * Usa los valores del enum DNP3_HdrState.
+     * @brief Conteo de dataframes data link.
      */
-    //uint8_t  hdr_stat;
+    uint16_t cntFrm;
 
     /**
-     * @brief Contador de cuántos bytes de una cabecera fragmentada ya hemos recibido.
-     */
-    //uint16_t  hdroff;
-
-    /**
-     * @brief Buffer temporal para almacenar los bytes de una cabecera DNP3 fragmentada.
-     * El tamaño 10 es para la cabecera de la capa de enlace, que es lo primero
-     * que debemos asegurar que tenemos completo.
-     */
-    //uint8_t  hdr_buf[10];
-
-    /**
-     * @brief Almacena el número de secuencia TCP del próximo byte que esperamos recibir.
-     * Esencial para detectar si se han perdido segmentos TCP en medio de un mensaje.
-     */
-    //uint32_t expected_seq; <-- migrado a stream_dnp3
-
-/**
- * @brief Estructura principal del flujo DNP3, con buffers dinámicos para cada dirección.
- */
+    * @brief Estructura principal del flujo DNP3, con buffers dinámicos para cada dirección.
+    */
     dnp_stream_t stream_dnp3; 
     /*
     dnp_stream_t client_stream; // Buffer para datos del cliente -> servidor.
@@ -267,12 +249,17 @@ typedef struct {
     // banderas DEBUG - BORRAR 
     // Contador de cuántos bytes faltan para completar el frame DNP3 actual (incluyendo cabecera, cuerpo y todos los CRCs).
     //uint32_t frame_bytes_remaining; 
-    uint32_t u32flag1; // conteo secuencias duplicadas
-    uint8_t u8flag2; // conteo paquetes malformados tcp
-    uint32_t u32flag3; // conteo secuencias saltadas 
-    uint32_t u32flag4; // conteo secuencias esperada igual 
+    uint32_t u32flag1; // acumulacion de tamano de frame dnp3
+    uint32_t u32flag2; //  conteo rest frames 
+    //uint32_t u32flag3; // 
+    //uint32_t u32flag4; //  
+    //uint32_t u32flag5; // 
+    //uint32_t u32flag6; // 
+    uint32_t u32flag7; //  conteo error 0x0564
+    uint32_t u32flag8; //  conteo reassembly fail
+    uint8_t u8flag9;
     
-    uint8_t  dhr_buf_save[10];
+    //uint8_t  dhr_buf_save[10];
 } dnp3Flow_t;
 
 
